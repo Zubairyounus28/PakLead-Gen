@@ -1,0 +1,7 @@
+{
+  "name": "PakLead Gen",
+  "description": "A business lead generation tool for Pakistan using Google Maps Grounding to find local businesses, formatted for export.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

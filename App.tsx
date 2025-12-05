@@ -259,6 +259,9 @@ const App: React.FC = () => {
 
       <footer className="bg-gray-800 text-gray-400 py-6 text-center text-sm">
         <p>© {new Date().getFullYear()} PakLead Gen. Powered by Gemini & Google Maps.</p>
+        <p className="mt-2 text-gray-500 text-xs">
+          Contact for Website or App Development: <span className="text-gray-300 hover:text-white transition">+923212696712</span> | Zubair Younus
+        </p>
       </footer>
     </div>
   );

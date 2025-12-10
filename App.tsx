@@ -16,6 +16,10 @@ const App: React.FC = () => {
   const [geo, setGeo] = useState<GeoLocation | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
+  // New State for Filtering and Selection
+  const [areaFilter, setAreaFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   const handleGeoLocation = () => {
     if ('geolocation' in navigator) {
       setLoading(true);
@@ -48,7 +52,6 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     
-    // Determine the actual location string to send to Gemini
     const searchLoc = isCustomLoc ? customLocation : location;
     
     if (isCustomLoc && !customLocation.trim()) {
@@ -71,6 +74,8 @@ const App: React.FC = () => {
         setResults(prev => [...prev, ...newBusinesses]);
       } else {
         setResults(newBusinesses);
+        setSelectedIds(new Set()); // Reset selection on new search
+        setAreaFilter(""); // Reset filter
       }
       
       if (newBusinesses.length === 0 && !isLoadMore) {
@@ -88,8 +93,55 @@ const App: React.FC = () => {
 
   const clearResults = () => {
     setResults([]);
+    setSelectedIds(new Set());
+    setAreaFilter("");
     setError(null);
   };
+
+  // --- Filtering Logic ---
+  const filteredResults = results.filter(b => {
+    const filterText = areaFilter.toLowerCase();
+    return b.address.toLowerCase().includes(filterText) || 
+           b.name.toLowerCase().includes(filterText);
+  });
+
+  // --- Selection Logic ---
+  const toggleSelection = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedIds(newSet);
+  };
+
+  const handleSelectAll = () => {
+    // If all visible are selected, deselect all. Otherwise select all visible.
+    const allVisibleSelected = filteredResults.every(b => selectedIds.has(b.id));
+    
+    const newSet = new Set(selectedIds);
+    if (allVisibleSelected) {
+      filteredResults.forEach(b => newSet.delete(b.id));
+    } else {
+      filteredResults.forEach(b => newSet.add(b.id));
+    }
+    setSelectedIds(newSet);
+  };
+
+  // --- Export Logic ---
+  const getExportData = () => {
+    // If specific items are selected, export those.
+    // Otherwise, export what is currently filtered/visible.
+    if (selectedIds.size > 0) {
+      return results.filter(b => selectedIds.has(b.id));
+    }
+    return filteredResults;
+  };
+
+  const exportLabel = selectedIds.size > 0 
+    ? `Export Selected (${selectedIds.size})` 
+    : `Export List (${filteredResults.length})`;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -192,33 +244,78 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* Filters and Controls Bar */}
         {results.length > 0 && (
-          <div className="mb-6 flex flex-wrap justify-between items-center gap-4">
-             <h2 className="text-2xl font-bold text-gray-800">
-               Results <span className="text-gray-400 text-lg font-normal">({results.length})</span>
-             </h2>
-             
-             <div className="flex gap-2">
-                <button onClick={() => exportToVCF(results)} className="flex items-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200">
-                  📇 VCF
-                </button>
-                <button onClick={() => exportToCSV(results)} className="flex items-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200">
-                  📊 CSV
-                </button>
-                <button onClick={() => exportToWord(results)} className="flex items-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200">
-                  📝 Word
-                </button>
-                <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-3 py-2">
-                  Clear
-                </button>
+          <div className="mb-6 space-y-4">
+             {/* Toolbar */}
+             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                {/* Filter Input */}
+                <div className="w-full md:w-1/2 relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                  <input 
+                    type="text" 
+                    placeholder="Filter by Town or Area..." 
+                    value={areaFilter} 
+                    onChange={(e) => setAreaFilter(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-pakgreen-500 outline-none"
+                  />
+                </div>
+
+                {/* Selection and Export Actions */}
+                <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
+                   <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
+                        onChange={handleSelectAll}
+                        className="w-4 h-4 text-pakgreen-600 rounded border-gray-300 focus:ring-pakgreen-500"
+                      />
+                      Select All
+                   </label>
+
+                   <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
+
+                   <div className="flex gap-2 w-full sm:w-auto justify-center">
+                      <button onClick={() => exportToVCF(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200 whitespace-nowrap" title="Export VCard">
+                        📇 VCF
+                      </button>
+                      <button onClick={() => exportToCSV(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200 whitespace-nowrap" title="Export CSV">
+                        📊 CSV
+                      </button>
+                      <button onClick={() => exportToWord(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200 whitespace-nowrap" title="Export Word">
+                        📝 Word
+                      </button>
+                   </div>
+                   
+                   <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-2">
+                      Clear
+                   </button>
+                </div>
+             </div>
+
+             {/* Stats & Selected Indicator */}
+             <div className="flex justify-between items-center px-2">
+                <h2 className="text-xl font-bold text-gray-800">
+                   Results <span className="text-gray-400 font-normal">({filteredResults.length})</span>
+                </h2>
+                {selectedIds.size > 0 && (
+                  <span className="bg-pakgreen-100 text-pakgreen-800 text-xs font-bold px-3 py-1 rounded-full">
+                    {selectedIds.size} Selected for Export
+                  </span>
+                )}
              </div>
           </div>
         )}
 
         {/* Results Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           {results.map((biz) => (
-             <BusinessCard key={biz.id} business={biz} />
+           {filteredResults.map((biz) => (
+             <BusinessCard 
+                key={biz.id} 
+                business={biz} 
+                isSelected={selectedIds.has(biz.id)}
+                onToggle={toggleSelection}
+             />
            ))}
         </div>
 
@@ -237,7 +334,7 @@ const App: React.FC = () => {
         )}
 
         {/* Load More */}
-        {!loading && results.length > 0 && (
+        {!loading && results.length > 0 && !areaFilter && (
           <div className="mt-10 text-center">
             <button 
               onClick={() => handleSearch(true)}
@@ -247,6 +344,12 @@ const App: React.FC = () => {
             </button>
             <p className="text-xs text-gray-400 mt-2">Searches wider area excluding current results</p>
           </div>
+        )}
+        
+        {!loading && results.length > 0 && areaFilter && filteredResults.length === 0 && (
+           <div className="text-center text-gray-400 mt-10">
+              <p>No results match your filter "{areaFilter}".</p>
+           </div>
         )}
 
         {!loading && results.length === 0 && !error && (

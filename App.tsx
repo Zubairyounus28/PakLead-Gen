@@ -6,6 +6,7 @@ import { PAKISTANI_CITIES, BUSINESS_TYPES } from './constants';
 import BusinessCard from './components/BusinessCard';
 import Header from './components/Header';
 import MapPreview from './components/MapPreview';
+import DonateModal from './components/DonateModal';
 
 const App: React.FC = () => {
   const [query, setQuery] = useState("");
@@ -17,12 +18,17 @@ const App: React.FC = () => {
   const [geo, setGeo] = useState<GeoLocation | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
+  // Modal State
+  const [isDonateOpen, setIsDonateOpen] = useState(false);
+
   // New State for Filtering and Selection
   const [areaFilter, setAreaFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Map Navigation State
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+  // Track the coordinates used for the last successful search to support "Load More" correctly
+  const [lastSearchCoords, setLastSearchCoords] = useState<GeoLocation | undefined>(undefined);
 
   // View Mode: 'grid' (default) or 'map' (split view)
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
@@ -103,8 +109,6 @@ const App: React.FC = () => {
       
       setLoading(true);
       setError(null);
-      // We don't change 'mapCenter' state here because the user manually moved it. 
-      // We just want to search at these coordinates.
 
       try {
           const newBusinesses = await searchBusinessesWithGemini(
@@ -118,6 +122,7 @@ const App: React.FC = () => {
           setResults(newBusinesses);
           setSelectedIds(new Set());
           setAreaFilter("");
+          setLastSearchCoords({ lat: center.lat, lng: center.lng }); // Save context for load more
           
           if (newBusinesses.length === 0) {
               setError("No businesses found in this specific area.");
@@ -151,9 +156,18 @@ const App: React.FC = () => {
       const existingNames = isLoadMore ? results.map(r => r.name) : [];
       
       // Determine search coordinates:
-      let searchCoords: GeoLocation | undefined = undefined;
-      if (isCustomLoc && mapCenter) {
-          searchCoords = { lat: mapCenter.lat, lng: mapCenter.lng };
+      let currentSearchCoords: GeoLocation | undefined = undefined;
+
+      if (isLoadMore && lastSearchCoords) {
+          // If loading more, stick to the coordinates of the last successful search
+          currentSearchCoords = lastSearchCoords;
+      } else {
+          // New Search: determine coords from UI
+          if (isCustomLoc && mapCenter) {
+              currentSearchCoords = { lat: mapCenter.lat, lng: mapCenter.lng };
+          } else if (location === "Near Me" && geo) {
+              currentSearchCoords = geo;
+          }
       }
 
       const newBusinesses = await searchBusinessesWithGemini(
@@ -161,7 +175,7 @@ const App: React.FC = () => {
         searchLoc, 
         geo, 
         existingNames,
-        searchCoords
+        currentSearchCoords
       );
 
       if (isLoadMore) {
@@ -170,12 +184,13 @@ const App: React.FC = () => {
         setResults(newBusinesses);
         setSelectedIds(new Set()); // Reset selection on new search
         setAreaFilter(""); // Reset filter
+        setLastSearchCoords(currentSearchCoords); // Save context
       }
       
       if (newBusinesses.length === 0 && !isLoadMore) {
         setError("No businesses found. Try a different query or location.");
       } else if (newBusinesses.length === 0 && isLoadMore) {
-         setError("No more new businesses found in this area. Try widening your search location.");
+         setError("No more new businesses found in this area. Try zooming out or moving the map slightly.");
       }
 
     } catch (e) {
@@ -183,7 +198,7 @@ const App: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [query, isCustomLoc, customLocation, location, geo, results, mapCenter]);
+  }, [query, isCustomLoc, customLocation, location, geo, results, mapCenter, lastSearchCoords]);
 
   const clearResults = () => {
     setResults([]);
@@ -191,6 +206,7 @@ const App: React.FC = () => {
     setAreaFilter("");
     setError(null);
     setMapCenter(null);
+    setLastSearchCoords(undefined);
   };
 
   // --- Filtering Logic ---
@@ -245,7 +261,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-      <Header />
+      <Header onDonateClick={() => setIsDonateOpen(true)} />
 
       {/* Search Section (Sticky Top) */}
       <section className="bg-white shadow-sm border-b border-gray-200 p-4 shrink-0 z-40">
@@ -461,6 +477,8 @@ const App: React.FC = () => {
              </div>
           </div>
       </div>
+
+      <DonateModal isOpen={isDonateOpen} onClose={() => setIsDonateOpen(false)} />
     </div>
   );
 };

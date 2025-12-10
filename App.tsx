@@ -6,17 +6,24 @@ import { PAKISTANI_CITIES, BUSINESS_TYPES } from './constants';
 import BusinessCard from './components/BusinessCard';
 import Header from './components/Header';
 
+type LocationMode = 'city' | 'custom' | 'route';
+
 const App: React.FC = () => {
   const [query, setQuery] = useState("");
-  const [location, setLocation] = useState("Karachi");
-  const [customLocation, setCustomLocation] = useState("");
-  const [isCustomLoc, setIsCustomLoc] = useState(false);
+  
+  // Location States
+  const [locationMode, setLocationMode] = useState<LocationMode>('city');
+  const [location, setLocation] = useState("Karachi"); // For city dropdown
+  const [customLocation, setCustomLocation] = useState(""); // For manual single input
+  const [routeStart, setRouteStart] = useState(""); // For route start
+  const [routeEnd, setRouteEnd] = useState(""); // For route end
+
   const [results, setResults] = useState<Business[]>([]);
   const [loading, setLoading] = useState(false);
   const [geo, setGeo] = useState<GeoLocation | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
-  // New State for Filtering and Selection
+  // Filter & Selection States
   const [areaFilter, setAreaFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -30,7 +37,7 @@ const App: React.FC = () => {
             lng: position.coords.longitude
           });
           setLocation("Near Me");
-          setIsCustomLoc(false);
+          setLocationMode('city');
           setLoading(false);
         },
         (err) => {
@@ -49,16 +56,27 @@ const App: React.FC = () => {
       return;
     }
 
+    let searchLoc = "";
+    
+    // Construct search location based on mode
+    if (locationMode === 'city') {
+      searchLoc = location;
+    } else if (locationMode === 'custom') {
+      if (!customLocation.trim()) {
+        setError("Please enter a manual address or area.");
+        return;
+      }
+      searchLoc = customLocation;
+    } else if (locationMode === 'route') {
+      if (!routeStart.trim() || !routeEnd.trim()) {
+        setError("Please enter both Start and End locations.");
+        return;
+      }
+      searchLoc = `between ${routeStart} and ${routeEnd}`;
+    }
+
     setLoading(true);
     setError(null);
-    
-    const searchLoc = isCustomLoc ? customLocation : location;
-    
-    if (isCustomLoc && !customLocation.trim()) {
-        setError("Please enter a manual address or area.");
-        setLoading(false);
-        return;
-    }
     
     try {
       const existingNames = isLoadMore ? results.map(r => r.name) : [];
@@ -89,7 +107,7 @@ const App: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [query, isCustomLoc, customLocation, location, geo, results]);
+  }, [query, locationMode, location, customLocation, routeStart, routeEnd, geo, results]);
 
   const clearResults = () => {
     setResults([]);
@@ -131,17 +149,11 @@ const App: React.FC = () => {
 
   // --- Export Logic ---
   const getExportData = () => {
-    // If specific items are selected, export those.
-    // Otherwise, export what is currently filtered/visible.
     if (selectedIds.size > 0) {
       return results.filter(b => selectedIds.has(b.id));
     }
     return filteredResults;
   };
-
-  const exportLabel = selectedIds.size > 0 
-    ? `Export Selected (${selectedIds.size})` 
-    : `Export List (${filteredResults.length})`;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -168,20 +180,24 @@ const App: React.FC = () => {
               </datalist>
             </div>
 
-            {/* Location Input */}
+            {/* Location Input Section */}
             <div className="flex-1">
               <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Location</label>
-              <div className="flex gap-2">
-                {!isCustomLoc ? (
+              <div className="flex gap-2 w-full">
+                
+                {/* 1. City Dropdown Mode */}
+                {locationMode === 'city' && (
                   <select 
-                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white"
+                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white min-w-0"
                     value={location}
                     onChange={(e) => {
-                      if (e.target.value === 'custom') {
-                        setIsCustomLoc(true);
-                        setCustomLocation("");
+                      const val = e.target.value;
+                      if (val === 'custom_mode') {
+                        setLocationMode('custom');
+                      } else if (val === 'route_mode') {
+                        setLocationMode('route');
                       } else {
-                        setLocation(e.target.value);
+                        setLocation(val);
                       }
                     }}
                   >
@@ -189,20 +205,25 @@ const App: React.FC = () => {
                     {PAKISTANI_CITIES.map(city => (
                       <option key={city} value={city}>{city}</option>
                     ))}
-                    <option value="custom">✍️ Manual Address / Custom Area</option>
+                    <option disabled>──────────</option>
+                    <option value="custom_mode">✍️ Manual Address / Custom Area</option>
+                    <option value="route_mode">🛣️ Between Two Locations (Route)</option>
                   </select>
-                ) : (
+                )}
+
+                {/* 2. Manual/Custom Mode */}
+                {locationMode === 'custom' && (
                   <div className="flex-1 flex gap-2">
                     <input 
                       type="text"
-                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none"
-                      placeholder="Enter specific address, street, or area..."
+                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-0"
+                      placeholder="Enter specific address or area..."
                       value={customLocation}
                       autoFocus
                       onChange={(e) => setCustomLocation(e.target.value)}
                     />
                     <button 
-                      onClick={() => setIsCustomLoc(false)}
+                      onClick={() => setLocationMode('city')}
                       className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"
                       title="Back to City List"
                     >
@@ -210,10 +231,40 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 )}
-                
+
+                {/* 3. Route Mode (Between 2 locations) */}
+                {locationMode === 'route' && (
+                  <div className="flex-1 flex gap-2 min-w-0">
+                    <input 
+                      type="text"
+                      className="flex-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-[80px]"
+                      placeholder="Start (e.g. Saddar)"
+                      value={routeStart}
+                      autoFocus
+                      onChange={(e) => setRouteStart(e.target.value)}
+                    />
+                    <span className="self-center text-gray-400 font-medium text-sm hidden sm:block">to</span>
+                    <input 
+                      type="text"
+                      className="flex-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-[80px]"
+                      placeholder="End (e.g. Clifton)"
+                      value={routeEnd}
+                      onChange={(e) => setRouteEnd(e.target.value)}
+                    />
+                    <button 
+                      onClick={() => setLocationMode('city')}
+                      className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"
+                      title="Back to City List"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* GPS Button (Always visible) */}
                 <button 
                   onClick={handleGeoLocation}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-lg border border-gray-300 transition"
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-lg border border-gray-300 transition shrink-0"
                   title="Use GPS Location"
                 >
                   📍

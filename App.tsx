@@ -283,18 +283,23 @@ const App: React.FC = () => {
                       autoFocus
                       onChange={(e) => setRadiusCenter(e.target.value)}
                     />
-                    <select
-                        className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white min-w-[80px]"
-                        value={radiusValue}
-                        onChange={(e) => setRadiusValue(e.target.value)}
-                    >
-                        <option value="1">1 km</option>
-                        <option value="2">2 km</option>
-                        <option value="3">3 km</option>
-                        <option value="5">5 km</option>
-                        <option value="10">10 km</option>
-                        <option value="20">20 km</option>
-                    </select>
+                    
+                    {/* Radius Input with custom typing support */}
+                    <div className="relative w-[110px] flex-shrink-0">
+                        <input
+                            type="number"
+                            min="1"
+                            max="1000"
+                            step="0.1"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none pr-8"
+                            placeholder="Radius"
+                            value={radiusValue}
+                            onChange={(e) => setRadiusValue(e.target.value)}
+                            title="Enter radius in Kilometers"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium pointer-events-none">km</span>
+                    </div>
+
                     <button 
                       onClick={() => setLocationMode('city')}
                       className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"

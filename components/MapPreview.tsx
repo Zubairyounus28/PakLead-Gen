@@ -14,9 +14,10 @@ const MapPreview: React.FC<Props> = ({ query, location, filter }) => {
   // Logic to handle "within X km of Y" for radius mode
   if (location.toLowerCase().startsWith("within ")) {
       // Parse format: "within [radius]km of [center]"
-      const match = location.match(/within (\d+)km of (.*)/i);
+      // Updated regex to handle decimals (e.g. 5.5km)
+      const match = location.match(/within ([\d.]+)km of (.*)/i);
       if (match) {
-          const radius = parseInt(match[1]);
+          const radius = parseFloat(match[1]);
           const center = match[2];
           mapQuery = `${query} near ${center}`;
           
@@ -25,7 +26,8 @@ const MapPreview: React.FC<Props> = ({ query, location, filter }) => {
           else if (radius <= 3) zoom = 14;
           else if (radius <= 5) zoom = 13;
           else if (radius <= 10) zoom = 12;
-          else zoom = 11; // 20km+
+          else if (radius <= 20) zoom = 11;
+          else zoom = 10;
       }
   }
 

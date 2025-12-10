@@ -90,7 +90,7 @@ export const searchBusinessesWithGemini = async (
     ${excludeContext}
     ${expansionInstruction}
     
-    Strictly list 5 to 10 distinct local businesses found using Google Maps.
+    Strictly list as many distinct local businesses as possible (target at least 30 to 50 results) found using Google Maps. Do not stop at 10.
     
     IMPORTANT: You must format the output strictly as follows for my parser to work. 
     Do not use JSON blocks. Use this plain text template for each business:
@@ -110,7 +110,7 @@ export const searchBusinessesWithGemini = async (
   try {
     const config: any = {
       tools: [{ googleMaps: {} }],
-      systemInstruction: "You are a lead generation assistant for Pakistan. You extract business details accurately using Google Maps.",
+      systemInstruction: "You are a high-volume lead generation assistant for Pakistan. Your goal is to extract the maximum number of business listings possible in a single response.",
     };
 
     // If using 'Near Me' with coordinates, pass them to retrievalConfig

@@ -7,6 +7,8 @@ export interface Business {
   website: string;
   description: string;
   mapLink?: string; // Derived from grounding metadata if available, or generated
+  lat?: number;
+  lng?: number;
 }
 
 export interface SearchState {

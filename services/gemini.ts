@@ -29,6 +29,12 @@ const parseBusinessText = (text: string): Business[] => {
 
     const address = extract("Address");
 
+    // Extract coordinates if available
+    const latStr = extract("Latitude");
+    const lngStr = extract("Longitude");
+    const lat = latStr !== "N/A" ? parseFloat(latStr) : undefined;
+    const lng = lngStr !== "N/A" ? parseFloat(lngStr) : undefined;
+
     // Construct a reliable search link
     let mapLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + " " + address)}`;
     
@@ -40,7 +46,9 @@ const parseBusinessText = (text: string): Business[] => {
       rating: extract("Rating"),
       website: extract("Website"),
       description: extract("Description"),
-      mapLink
+      mapLink,
+      lat,
+      lng
     });
   });
 
@@ -88,15 +96,17 @@ export const searchBusinessesWithGemini = async (
     Rating: <Rating ex: 4.5/5 or N/A>
     Website: <Website URL or N/A>
     Description: <Short 1 sentence description>
+    Latitude: <Decimal Latitude or N/A>
+    Longitude: <Decimal Longitude or N/A>
     ###END_BUSINESS
 
-    Ensure accurate contact details where available from the map data.
+    Ensure accurate contact details and coordinates where available from the map data.
   `;
 
   try {
     const config: any = {
       tools: [{ googleMaps: {} }],
-      systemInstruction: "You are a lead generation assistant for Pakistan. You extract business details accurately using Google Maps.",
+      systemInstruction: "You are a lead generation assistant for Pakistan. You extract business details and coordinates accurately using Google Maps.",
     };
 
     // If using 'Near Me' with coordinates, pass them to retrievalConfig

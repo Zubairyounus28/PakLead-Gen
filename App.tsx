@@ -5,6 +5,7 @@ import { exportToCSV, exportToVCF, exportToWord } from './utils/exportUtils';
 import { PAKISTANI_CITIES, BUSINESS_TYPES } from './constants';
 import BusinessCard from './components/BusinessCard';
 import Header from './components/Header';
+import MapPreview from './components/MapPreview';
 
 const App: React.FC = () => {
   const [query, setQuery] = useState("");
@@ -129,19 +130,26 @@ const App: React.FC = () => {
     setSelectedIds(newSet);
   };
 
+  // --- Map Interaction Logic ---
+  const handleMarkerClick = (id: string) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Auto-select when clicking map marker (optional per user request implication)
+      const newSet = new Set(selectedIds);
+      newSet.add(id);
+      setSelectedIds(newSet);
+    }
+  };
+
   // --- Export Logic ---
   const getExportData = () => {
-    // If specific items are selected, export those.
-    // Otherwise, export what is currently filtered/visible.
     if (selectedIds.size > 0) {
       return results.filter(b => selectedIds.has(b.id));
     }
     return filteredResults;
   };
-
-  const exportLabel = selectedIds.size > 0 
-    ? `Export Selected (${selectedIds.size})` 
-    : `Export List (${filteredResults.length})`;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -244,67 +252,72 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Filters and Controls Bar */}
+        {/* Filters, Map, and Controls Bar */}
         {results.length > 0 && (
-          <div className="mb-6 space-y-4">
-             {/* Toolbar */}
-             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                {/* Filter Input */}
-                <div className="w-full md:w-1/2 relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-                  <input 
-                    type="text" 
-                    placeholder="Filter by Town or Area..." 
-                    value={areaFilter} 
-                    onChange={(e) => setAreaFilter(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-pakgreen-500 outline-none"
-                  />
-                </div>
+          <>
+            {/* Map Preview of the Search Area */}
+            <MapPreview 
+              query={query} 
+              location={isCustomLoc ? customLocation : location} 
+              businesses={results} 
+              filter={areaFilter}
+              onFilterChange={setAreaFilter}
+              onMarkerClick={handleMarkerClick}
+            />
 
-                {/* Selection and Export Actions */}
-                <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
-                   <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer select-none">
-                      <input 
-                        type="checkbox" 
-                        checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
-                        onChange={handleSelectAll}
-                        className="w-4 h-4 text-pakgreen-600 rounded border-gray-300 focus:ring-pakgreen-500"
-                      />
-                      Select All
-                   </label>
+            <div className="mb-6 space-y-4">
+              {/* Toolbar */}
+              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                  {/* Info Text (Replacing Old Input) */}
+                  <div className="w-full md:w-1/2 text-gray-600 text-sm">
+                    <span className="font-semibold text-pakgreen-700">Tip:</span> Use the map search bar above to filter results by town or street name.
+                  </div>
 
-                   <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
+                  {/* Selection and Export Actions */}
+                  <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
+                          onChange={handleSelectAll}
+                          className="w-4 h-4 text-pakgreen-600 rounded border-gray-300 focus:ring-pakgreen-500"
+                        />
+                        Select All
+                    </label>
 
-                   <div className="flex gap-2 w-full sm:w-auto justify-center">
-                      <button onClick={() => exportToVCF(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200 whitespace-nowrap" title="Export VCard">
-                        📇 VCF
-                      </button>
-                      <button onClick={() => exportToCSV(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200 whitespace-nowrap" title="Export CSV">
-                        📊 CSV
-                      </button>
-                      <button onClick={() => exportToWord(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200 whitespace-nowrap" title="Export Word">
-                        📝 Word
-                      </button>
-                   </div>
-                   
-                   <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-2">
-                      Clear
-                   </button>
-                </div>
-             </div>
+                    <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
 
-             {/* Stats & Selected Indicator */}
-             <div className="flex justify-between items-center px-2">
-                <h2 className="text-xl font-bold text-gray-800">
-                   Results <span className="text-gray-400 font-normal">({filteredResults.length})</span>
-                </h2>
-                {selectedIds.size > 0 && (
-                  <span className="bg-pakgreen-100 text-pakgreen-800 text-xs font-bold px-3 py-1 rounded-full">
-                    {selectedIds.size} Selected for Export
-                  </span>
-                )}
-             </div>
-          </div>
+                    <div className="flex gap-2 w-full sm:w-auto justify-center">
+                        <button onClick={() => exportToVCF(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200 whitespace-nowrap" title="Export VCard">
+                          📇 VCF
+                        </button>
+                        <button onClick={() => exportToCSV(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200 whitespace-nowrap" title="Export CSV">
+                          📊 CSV
+                        </button>
+                        <button onClick={() => exportToWord(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200 whitespace-nowrap" title="Export Word">
+                          📝 Word
+                        </button>
+                    </div>
+                    
+                    <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-2">
+                        Clear
+                    </button>
+                  </div>
+              </div>
+
+              {/* Stats & Selected Indicator */}
+              <div className="flex justify-between items-center px-2">
+                  <h2 className="text-xl font-bold text-gray-800">
+                    Results <span className="text-gray-400 font-normal">({filteredResults.length})</span>
+                  </h2>
+                  {selectedIds.size > 0 && (
+                    <span className="bg-pakgreen-100 text-pakgreen-800 text-xs font-bold px-3 py-1 rounded-full">
+                      {selectedIds.size} Selected for Export
+                    </span>
+                  )}
+              </div>
+            </div>
+          </>
         )}
 
         {/* Results Grid */}

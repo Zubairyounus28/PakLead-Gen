@@ -13,8 +13,9 @@ const BusinessCard: React.FC<Props> = ({ business, isSelected, onToggle }) => {
 
   return (
     <div 
+      id={business.id}
       className={`
-        relative rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group
+        relative rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col h-full group scroll-mt-24
         ${isSelected ? 'ring-2 ring-pakgreen-500 border-pakgreen-500 bg-pakgreen-50' : 'bg-white border border-gray-100'}
       `}
     >

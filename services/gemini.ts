@@ -59,7 +59,8 @@ export const searchBusinessesWithGemini = async (
   term: string,
   location: string,
   geo?: GeoLocation,
-  existingNames: string[] = []
+  existingNames: string[] = [],
+  searchCoordinates?: GeoLocation
 ): Promise<Business[]> => {
   
   const isLoadMore = existingNames.length > 0;
@@ -70,12 +71,24 @@ export const searchBusinessesWithGemini = async (
     : "";
 
   let locationContext = "";
-  if (geo && location === "Near Me") {
+  let retrievalLat: number | undefined;
+  let retrievalLng: number | undefined;
+
+  // Priority 1: Explicit Search Coordinates (from Map Search)
+  if (searchCoordinates) {
+    locationContext = `FOCUS SEARCH AROUND COORDINATES: Lat ${searchCoordinates.lat}, Lng ${searchCoordinates.lng}.`;
+    retrievalLat = searchCoordinates.lat;
+    retrievalLng = searchCoordinates.lng;
+  } 
+  // Priority 2: User GPS "Near Me"
+  else if (geo && location === "Near Me") {
      locationContext = `The user is located at Lat: ${geo.lat}, Lng: ${geo.lng}. Search around this coordinate.`;
+     retrievalLat = geo.lat;
+     retrievalLng = geo.lng;
   }
 
   const expansionInstruction = isLoadMore
-    ? "Expand the search area to surrounding neighborhoods or a wider radius to find new results not listed above."
+    ? "Expand the search area slightly to find new results not listed above."
     : "";
 
   const prompt = `
@@ -84,7 +97,8 @@ export const searchBusinessesWithGemini = async (
     ${excludeContext}
     ${expansionInstruction}
     
-    Strictly list 5 to 10 distinct local businesses found using Google Maps.
+    Strictly list as many distinct local businesses as possible (aim for 100) found using Google Maps.
+    If the location is specific (like a colony or block), prioritize businesses exactly in that area.
     
     IMPORTANT: You must format the output strictly as follows for my parser to work. 
     Do not use JSON blocks. Use this plain text template for each business:
@@ -109,13 +123,13 @@ export const searchBusinessesWithGemini = async (
       systemInstruction: "You are a lead generation assistant for Pakistan. You extract business details and coordinates accurately using Google Maps.",
     };
 
-    // If using 'Near Me' with coordinates, pass them to retrievalConfig
-    if (geo && location.toLowerCase().includes("near me")) {
+    // Apply retrieval config if we have coordinates (either from Map Center or GPS)
+    if (retrievalLat !== undefined && retrievalLng !== undefined) {
         config.toolConfig = {
             retrievalConfig: {
                 latLng: {
-                    latitude: geo.lat,
-                    longitude: geo.lng
+                    latitude: retrievalLat,
+                    longitude: retrievalLng
                 }
             }
         };

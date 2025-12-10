@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Business, GeoLocation } from './types';
 import { searchBusinessesWithGemini } from './services/gemini';
 import { exportToCSV, exportToVCF, exportToWord } from './utils/exportUtils';
@@ -21,6 +21,14 @@ const App: React.FC = () => {
   const [areaFilter, setAreaFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Map Navigation State
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number; zoom: number } | null>(null);
+
+  // View Mode: 'grid' (default) or 'map' (split view)
+  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+
+  const businessInputRef = useRef<HTMLInputElement>(null);
+
   const handleGeoLocation = () => {
     if ('geolocation' in navigator) {
       setLoading(true);
@@ -33,6 +41,7 @@ const App: React.FC = () => {
           setLocation("Near Me");
           setIsCustomLoc(false);
           setLoading(false);
+          setMapCenter({ lat: position.coords.latitude, lng: position.coords.longitude, zoom: 15 });
         },
         (err) => {
           setError("Could not access location. Please enable GPS.");
@@ -44,9 +53,86 @@ const App: React.FC = () => {
     }
   };
 
+  // Called when user presses Enter in the Map Search Bar
+  const handleMapLocationSearch = async (searchText: string) => {
+     try {
+        setLoading(true);
+        // Use OpenStreetMap Nominatim for free geocoding
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchText)}&countrycodes=pk&limit=1`);
+        const data = await response.json();
+
+        if (data && data.length > 0) {
+           const lat = parseFloat(data[0].lat);
+           const lon = parseFloat(data[0].lon);
+           
+           // 1. Move Map
+           setMapCenter({ lat, lng: lon, zoom: 14 });
+           
+           // 2. Update Location State
+           setIsCustomLoc(true);
+           setCustomLocation(searchText);
+           setLocation('custom'); // Ensure dropdown reflects custom
+           
+           // 3. Prompt user
+           if (!query.trim()) {
+              setError(null); // Clear previous errors
+              // Focus business input
+              if(businessInputRef.current) {
+                  businessInputRef.current.focus();
+              }
+           }
+           setLoading(false);
+        } else {
+           setError(`Could not find location "${searchText}" on map.`);
+           setLoading(false);
+        }
+     } catch (e) {
+        console.error(e);
+        setError("Failed to locate area. Please check internet connection.");
+        setLoading(false);
+     }
+  };
+
+  // Called when user moves map and clicks "Search this area"
+  const handleSearchThisArea = async (center: { lat: number; lng: number }) => {
+      if (!query) {
+          setError("Please enter a business type first (e.g. Schools).");
+          if (businessInputRef.current) businessInputRef.current.focus();
+          return;
+      }
+      
+      setLoading(true);
+      setError(null);
+      // We don't change 'mapCenter' state here because the user manually moved it. 
+      // We just want to search at these coordinates.
+
+      try {
+          const newBusinesses = await searchBusinessesWithGemini(
+              query,
+              "Map Location", // Label for API prompt
+              undefined,
+              [],
+              { lat: center.lat, lng: center.lng } // Explicit coordinates
+          );
+
+          setResults(newBusinesses);
+          setSelectedIds(new Set());
+          setAreaFilter("");
+          
+          if (newBusinesses.length === 0) {
+              setError("No businesses found in this specific area.");
+          }
+      } catch (e) {
+          setError("Failed to fetch results from this map area.");
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handleSearch = useCallback(async (isLoadMore = false) => {
     if (!query) {
       setError("Please enter a business type.");
+      if(businessInputRef.current) businessInputRef.current.focus();
       return;
     }
 
@@ -64,11 +150,18 @@ const App: React.FC = () => {
     try {
       const existingNames = isLoadMore ? results.map(r => r.name) : [];
       
+      // Determine search coordinates:
+      let searchCoords: GeoLocation | undefined = undefined;
+      if (isCustomLoc && mapCenter) {
+          searchCoords = { lat: mapCenter.lat, lng: mapCenter.lng };
+      }
+
       const newBusinesses = await searchBusinessesWithGemini(
         query, 
         searchLoc, 
         geo, 
-        existingNames
+        existingNames,
+        searchCoords
       );
 
       if (isLoadMore) {
@@ -90,13 +183,14 @@ const App: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [query, isCustomLoc, customLocation, location, geo, results]);
+  }, [query, isCustomLoc, customLocation, location, geo, results, mapCenter]);
 
   const clearResults = () => {
     setResults([]);
     setSelectedIds(new Set());
     setAreaFilter("");
     setError(null);
+    setMapCenter(null);
   };
 
   // --- Filtering Logic ---
@@ -119,7 +213,7 @@ const App: React.FC = () => {
 
   const handleSelectAll = () => {
     // If all visible are selected, deselect all. Otherwise select all visible.
-    const allVisibleSelected = filteredResults.every(b => selectedIds.has(b.id));
+    const allVisibleSelected = filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id));
     
     const newSet = new Set(selectedIds);
     if (allVisibleSelected) {
@@ -135,8 +229,6 @@ const App: React.FC = () => {
     const element = document.getElementById(id);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Auto-select when clicking map marker (optional per user request implication)
       const newSet = new Set(selectedIds);
       newSet.add(id);
       setSelectedIds(newSet);
@@ -152,22 +244,22 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
       <Header />
 
-      {/* Search Section */}
-      <section className="bg-white shadow-sm border-b border-gray-200 p-4 md:p-6 sticky top-[60px] z-40">
-        <div className="container mx-auto max-w-5xl">
-          <div className="flex flex-col md:flex-row gap-4">
+      {/* Search Section (Sticky Top) */}
+      <section className="bg-white shadow-sm border-b border-gray-200 p-4 shrink-0 z-40">
+        <div className="container mx-auto max-w-6xl">
+          <div className="flex flex-col lg:flex-row gap-3 items-end lg:items-center">
             
             {/* Business Type Input */}
-            <div className="flex-1 relative">
-              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Business Type</label>
-              <input 
+            <div className="flex-1 w-full relative">
+               <input 
+                ref={businessInputRef}
                 type="text"
                 list="business-types"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 focus:border-pakgreen-500 outline-none transition"
-                placeholder="e.g. Restaurants, Plumbers"
+                className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none text-sm"
+                placeholder={isCustomLoc && !query ? `What business in ${customLocation}?` : "Business Type (e.g. Restaurants)"}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
@@ -177,12 +269,10 @@ const App: React.FC = () => {
             </div>
 
             {/* Location Input */}
-            <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Location</label>
-              <div className="flex gap-2">
+            <div className="flex-1 w-full flex gap-2">
                 {!isCustomLoc ? (
                   <select 
-                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white"
+                    className="flex-1 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white text-sm"
                     value={location}
                     onChange={(e) => {
                       if (e.target.value === 'custom') {
@@ -193,201 +283,184 @@ const App: React.FC = () => {
                       }
                     }}
                   >
-                    {location === 'Near Me' && <option value="Near Me">📍 Near Me (GPS)</option>}
+                    {location === 'Near Me' && <option value="Near Me">📍 Near Me</option>}
                     {PAKISTANI_CITIES.map(city => (
                       <option key={city} value={city}>{city}</option>
                     ))}
-                    <option value="custom">✍️ Manual Address / Custom Area</option>
+                    <option value="custom">✍️ Manual Location</option>
                   </select>
                 ) : (
-                  <div className="flex-1 flex gap-2">
+                  <div className="flex-1 flex gap-1">
                     <input 
                       type="text"
-                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none"
-                      placeholder="Enter specific address, street, or area..."
+                      className="flex-1 p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none text-sm"
+                      placeholder="Address/Area..."
                       value={customLocation}
-                      autoFocus
                       onChange={(e) => setCustomLocation(e.target.value)}
                     />
-                    <button 
-                      onClick={() => setIsCustomLoc(false)}
-                      className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"
-                      title="Back to City List"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setIsCustomLoc(false)} className="px-2 text-gray-500 border rounded">✕</button>
                   </div>
                 )}
                 
-                <button 
-                  onClick={handleGeoLocation}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-lg border border-gray-300 transition"
-                  title="Use GPS Location"
-                >
-                  📍
-                </button>
-              </div>
+                <button onClick={handleGeoLocation} className="bg-gray-100 p-2.5 rounded-lg border hover:bg-gray-200" title="GPS">📍</button>
             </div>
 
             {/* Search Button */}
-            <div className="flex items-end">
-               <button 
-                 onClick={() => handleSearch(false)}
-                 disabled={loading}
-                 className="w-full md:w-auto bg-pakgreen-600 hover:bg-pakgreen-700 text-white font-bold py-3 px-8 rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed h-[50px]"
-               >
-                 {loading ? 'Searching...' : 'Search'}
-               </button>
+            <button 
+                onClick={() => handleSearch(false)}
+                disabled={loading}
+                className="w-full lg:w-auto bg-pakgreen-600 hover:bg-pakgreen-700 text-white font-bold py-2.5 px-6 rounded-lg shadow disabled:opacity-50 transition text-sm whitespace-nowrap"
+            >
+                {loading ? 'Searching...' : '🔍 Search'}
+            </button>
+
+            {/* View Toggles */}
+            <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shrink-0">
+                <button 
+                  onClick={() => setViewMode('grid')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition flex items-center gap-1 ${viewMode === 'grid' ? 'bg-white shadow text-pakgreen-700' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  <span className="text-sm">☰</span> Grid
+                </button>
+                <button 
+                  onClick={() => setViewMode('map')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition flex items-center gap-1 ${viewMode === 'map' ? 'bg-white shadow text-pakgreen-700' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  <span className="text-sm">🗺️</span> Map
+                </button>
             </div>
           </div>
+          
+          {/* Contextual Hint */}
+          {isCustomLoc && !query && customLocation && (
+              <div className="mt-2 text-xs text-pakgreen-700 font-medium animate-pulse">
+                  📍 Map set to {customLocation}. Now enter a business type above!
+              </div>
+          )}
         </div>
       </section>
 
-      {/* Main Content */}
-      <main className="flex-grow container mx-auto px-4 py-8 max-w-6xl">
-        
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-center">
-            {error}
-          </div>
-        )}
-
-        {/* Filters, Map, and Controls Bar */}
-        {results.length > 0 && (
-          <>
-            {/* Map Preview of the Search Area */}
-            <MapPreview 
+      {/* Main Content Area */}
+      <div className={`flex-grow overflow-hidden ${viewMode === 'map' ? 'flex flex-col lg:flex-row' : 'overflow-y-auto'}`}>
+          
+          {/* Map Section */}
+          <div className={`
+             transition-all duration-300
+             ${viewMode === 'map' 
+               ? 'h-[40vh] lg:h-full lg:w-3/5 order-1 lg:order-1' 
+               : 'h-auto w-full container mx-auto max-w-6xl px-4 pt-6'
+             }
+          `}>
+             <MapPreview 
               query={query} 
               location={isCustomLoc ? customLocation : location} 
               businesses={results} 
               filter={areaFilter}
               onFilterChange={setAreaFilter}
+              onLocationSearch={handleMapLocationSearch}
+              onSearchArea={handleSearchThisArea}
+              mapCenter={mapCenter}
               onMarkerClick={handleMarkerClick}
+              className={viewMode === 'map' ? 'h-full w-full rounded-none border-0' : 'h-[350px]'}
+              loading={loading}
             />
+          </div>
 
-            <div className="mb-6 space-y-4">
-              {/* Toolbar */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                  {/* Info Text (Replacing Old Input) */}
-                  <div className="w-full md:w-1/2 text-gray-600 text-sm">
-                    <span className="font-semibold text-pakgreen-700">Tip:</span> Use the map search bar above to filter results by town or street name.
+          {/* Results/List Section */}
+          <div className={`
+             ${viewMode === 'map'
+                ? 'h-[60vh] lg:h-full lg:w-2/5 overflow-y-auto bg-white border-l border-gray-200 order-2 lg:order-2'
+                : 'container mx-auto max-w-6xl px-4 pb-12'
+             }
+          `}>
+             <div className="p-4 space-y-4">
+                
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm mb-4">
+                    {error}
                   </div>
+                )}
 
-                  {/* Selection and Export Actions */}
-                  <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer select-none">
-                        <input 
-                          type="checkbox" 
-                          checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
-                          onChange={handleSelectAll}
-                          className="w-4 h-4 text-pakgreen-600 rounded border-gray-300 focus:ring-pakgreen-500"
-                        />
-                        Select All
-                    </label>
-
-                    <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-
-                    <div className="flex gap-2 w-full sm:w-auto justify-center">
-                        <button onClick={() => exportToVCF(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200 whitespace-nowrap" title="Export VCard">
-                          📇 VCF
+                {/* Toolbar */}
+                {results.length > 0 && (
+                  <div className="flex flex-col gap-3 pb-2 border-b border-gray-100">
+                    <div className="flex justify-between items-center">
+                       <h2 className="font-bold text-gray-800">
+                         {filteredResults.length} Results
+                       </h2>
+                       <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none bg-gray-50 px-2 py-1 rounded border">
+                              <input 
+                                type="checkbox" 
+                                checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
+                                onChange={handleSelectAll}
+                                className="w-3 h-3 text-pakgreen-600 rounded"
+                              />
+                              Select All
+                          </label>
+                          <button onClick={clearResults} className="text-xs text-red-500 hover:underline px-2">Clear</button>
+                       </div>
+                    </div>
+                    
+                    {/* Export Buttons */}
+                    <div className="flex gap-2">
+                        <button onClick={() => exportToVCF(getExportData())} className="flex-1 text-xs bg-blue-50 text-blue-700 px-2 py-1.5 rounded border border-blue-200 hover:bg-blue-100">
+                          📇 VCF ({selectedIds.size || filteredResults.length})
                         </button>
-                        <button onClick={() => exportToCSV(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200 whitespace-nowrap" title="Export CSV">
+                        <button onClick={() => exportToCSV(getExportData())} className="flex-1 text-xs bg-green-50 text-green-700 px-2 py-1.5 rounded border border-green-200 hover:bg-green-100">
                           📊 CSV
                         </button>
-                        <button onClick={() => exportToWord(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200 whitespace-nowrap" title="Export Word">
+                        <button onClick={() => exportToWord(getExportData())} className="flex-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1.5 rounded border border-indigo-200 hover:bg-indigo-100">
                           📝 Word
                         </button>
                     </div>
-                    
-                    <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-2">
-                        Clear
-                    </button>
                   </div>
-              </div>
+                )}
 
-              {/* Stats & Selected Indicator */}
-              <div className="flex justify-between items-center px-2">
-                  <h2 className="text-xl font-bold text-gray-800">
-                    Results <span className="text-gray-400 font-normal">({filteredResults.length})</span>
-                  </h2>
-                  {selectedIds.size > 0 && (
-                    <span className="bg-pakgreen-100 text-pakgreen-800 text-xs font-bold px-3 py-1 rounded-full">
-                      {selectedIds.size} Selected for Export
-                    </span>
+                {/* Cards Grid */}
+                <div className={`grid gap-4 ${viewMode === 'map' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+                  
+                  {loading && [1, 2, 3].map(i => (
+                    <div key={i} className="bg-white rounded-xl shadow p-4 h-40 animate-pulse border border-gray-100">
+                       <div className="h-5 bg-gray-100 rounded w-3/4 mb-3"></div>
+                       <div className="h-3 bg-gray-100 rounded w-1/2 mb-2"></div>
+                       <div className="h-3 bg-gray-100 rounded w-full mb-1"></div>
+                    </div>
+                  ))}
+
+                  {!loading && filteredResults.map((biz) => (
+                    <BusinessCard 
+                        key={biz.id} 
+                        business={biz} 
+                        isSelected={selectedIds.has(biz.id)}
+                        onToggle={toggleSelection}
+                    />
+                  ))}
+                  
+                  {!loading && results.length > 0 && (
+                      <div className="col-span-full text-center py-6">
+                         <button 
+                            onClick={() => handleSearch(true)}
+                            className="bg-gray-100 text-gray-600 text-sm font-semibold py-2 px-6 rounded-full hover:bg-pakgreen-50 hover:text-pakgreen-700 border border-gray-200"
+                          >
+                            Load More
+                          </button>
+                      </div>
                   )}
-              </div>
-            </div>
-          </>
-        )}
 
-        {/* Results Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           {filteredResults.map((biz) => (
-             <BusinessCard 
-                key={biz.id} 
-                business={biz} 
-                isSelected={selectedIds.has(biz.id)}
-                onToggle={toggleSelection}
-             />
-           ))}
-        </div>
-
-        {/* Loading Skeleton / State */}
-        {loading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-xl shadow p-5 h-48 animate-pulse">
-                <div className="h-6 bg-gray-200 rounded w-3/4 mb-4"></div>
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-                <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
-                <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-              </div>
-            ))}
+                  {!loading && results.length === 0 && !error && (
+                    <div className="text-center py-10 text-gray-400">
+                       <div className="text-4xl mb-2">🔎</div>
+                       <p className="text-sm">
+                          {isCustomLoc ? `Map centered on ${customLocation}.` : "Start your search above."} <br/>
+                          Enter business type to find leads.
+                       </p>
+                    </div>
+                  )}
+                </div>
+             </div>
           </div>
-        )}
-
-        {/* Load More */}
-        {!loading && results.length > 0 && !areaFilter && (
-          <div className="mt-10 text-center">
-            <button 
-              onClick={() => handleSearch(true)}
-              className="bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-8 rounded-full hover:bg-gray-50 hover:shadow transition hover:border-pakgreen-500 hover:text-pakgreen-700"
-            >
-              Load More & Expand Search ↻
-            </button>
-            <p className="text-xs text-gray-400 mt-2">Searches wider area excluding current results</p>
-          </div>
-        )}
-        
-        {!loading && results.length > 0 && areaFilter && filteredResults.length === 0 && (
-           <div className="text-center text-gray-400 mt-10">
-              <p>No results match your filter "{areaFilter}".</p>
-           </div>
-        )}
-
-        {!loading && results.length === 0 && !error && (
-           <div className="text-center text-gray-400 mt-20">
-              <div className="text-6xl mb-4">🏙️</div>
-              <p className="text-lg">Enter a business type and location to start finding leads.</p>
-           </div>
-        )}
-      </main>
-
-      <footer className="bg-gray-800 text-gray-400 py-6 text-center text-sm">
-        <p>© {new Date().getFullYear()} PakLead Gen. Powered by Gemini & Google Maps.</p>
-        <p className="mt-2 text-gray-500 text-xs">
-          Contact for Website or App Development: 
-          <a 
-            href="https://wa.me/923212696712" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-gray-300 hover:text-white transition hover:underline ml-1"
-          >
-            +923212696712
-          </a> 
-          {' '}| Zubair Younus
-        </p>
-      </footer>
+      </div>
     </div>
   );
 };

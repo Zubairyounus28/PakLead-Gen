@@ -5,41 +5,20 @@ import { exportToCSV, exportToVCF, exportToWord } from './utils/exportUtils';
 import { PAKISTANI_CITIES, BUSINESS_TYPES } from './constants';
 import BusinessCard from './components/BusinessCard';
 import Header from './components/Header';
-import MapPreview from './components/MapPreview';
-
-type LocationMode = 'city' | 'custom' | 'route' | 'radius';
 
 const App: React.FC = () => {
   const [query, setQuery] = useState("");
-  
-  // Location States
-  const [locationMode, setLocationMode] = useState<LocationMode>('city');
-  const [location, setLocation] = useState("Karachi"); // For city dropdown
-  const [customLocation, setCustomLocation] = useState(""); // For manual single input
-  const [routeStart, setRouteStart] = useState(""); // For route start
-  const [routeEnd, setRouteEnd] = useState(""); // For route end
-  
-  // Radius States
-  const [radiusCenter, setRadiusCenter] = useState("");
-  const [radiusValue, setRadiusValue] = useState("5"); // Default 5km
-
+  const [location, setLocation] = useState("Karachi");
+  const [customLocation, setCustomLocation] = useState("");
+  const [isCustomLoc, setIsCustomLoc] = useState(false);
   const [results, setResults] = useState<Business[]>([]);
   const [loading, setLoading] = useState(false);
   const [geo, setGeo] = useState<GeoLocation | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter & Selection States
+  // New State for Filtering and Selection
   const [areaFilter, setAreaFilter] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // Helper to get the current effective location string for Search & Map
-  const getEffectiveLocation = useCallback(() => {
-    if (locationMode === 'city') return location;
-    if (locationMode === 'custom') return customLocation;
-    if (locationMode === 'route') return `between ${routeStart} and ${routeEnd}`;
-    if (locationMode === 'radius') return `within ${radiusValue}km of ${radiusCenter}`;
-    return location;
-  }, [locationMode, location, customLocation, routeStart, routeEnd, radiusValue, radiusCenter]);
 
   const handleGeoLocation = () => {
     if ('geolocation' in navigator) {
@@ -51,7 +30,7 @@ const App: React.FC = () => {
             lng: position.coords.longitude
           });
           setLocation("Near Me");
-          setLocationMode('city');
+          setIsCustomLoc(false);
           setLoading(false);
         },
         (err) => {
@@ -70,24 +49,16 @@ const App: React.FC = () => {
       return;
     }
 
-    // Validation
-    if (locationMode === 'custom' && !customLocation.trim()) {
-      setError("Please enter a manual address or area.");
-      return;
-    }
-    if (locationMode === 'route' && (!routeStart.trim() || !routeEnd.trim())) {
-      setError("Please enter both Start and End locations.");
-      return;
-    }
-    if (locationMode === 'radius' && !radiusCenter.trim()) {
-      setError("Please enter a center point for the area.");
-      return;
-    }
-
-    const searchLoc = getEffectiveLocation();
-
     setLoading(true);
     setError(null);
+    
+    const searchLoc = isCustomLoc ? customLocation : location;
+    
+    if (isCustomLoc && !customLocation.trim()) {
+        setError("Please enter a manual address or area.");
+        setLoading(false);
+        return;
+    }
     
     try {
       const existingNames = isLoadMore ? results.map(r => r.name) : [];
@@ -118,7 +89,7 @@ const App: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [query, locationMode, customLocation, routeStart, routeEnd, radiusCenter, radiusValue, geo, results, getEffectiveLocation]);
+  }, [query, isCustomLoc, customLocation, location, geo, results]);
 
   const clearResults = () => {
     setResults([]);
@@ -146,7 +117,9 @@ const App: React.FC = () => {
   };
 
   const handleSelectAll = () => {
+    // If all visible are selected, deselect all. Otherwise select all visible.
     const allVisibleSelected = filteredResults.every(b => selectedIds.has(b.id));
+    
     const newSet = new Set(selectedIds);
     if (allVisibleSelected) {
       filteredResults.forEach(b => newSet.delete(b.id));
@@ -156,12 +129,19 @@ const App: React.FC = () => {
     setSelectedIds(newSet);
   };
 
+  // --- Export Logic ---
   const getExportData = () => {
+    // If specific items are selected, export those.
+    // Otherwise, export what is currently filtered/visible.
     if (selectedIds.size > 0) {
       return results.filter(b => selectedIds.has(b.id));
     }
     return filteredResults;
   };
+
+  const exportLabel = selectedIds.size > 0 
+    ? `Export Selected (${selectedIds.size})` 
+    : `Export List (${filteredResults.length})`;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -188,26 +168,20 @@ const App: React.FC = () => {
               </datalist>
             </div>
 
-            {/* Location Input Section */}
+            {/* Location Input */}
             <div className="flex-1">
               <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Location</label>
-              <div className="flex gap-2 w-full">
-                
-                {/* 1. City Dropdown Mode */}
-                {locationMode === 'city' && (
+              <div className="flex gap-2">
+                {!isCustomLoc ? (
                   <select 
-                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white min-w-0"
+                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none bg-white"
                     value={location}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'custom_mode') {
-                        setLocationMode('custom');
-                      } else if (val === 'route_mode') {
-                        setLocationMode('route');
-                      } else if (val === 'radius_mode') {
-                        setLocationMode('radius');
+                      if (e.target.value === 'custom') {
+                        setIsCustomLoc(true);
+                        setCustomLocation("");
                       } else {
-                        setLocation(val);
+                        setLocation(e.target.value);
                       }
                     }}
                   >
@@ -215,26 +189,20 @@ const App: React.FC = () => {
                     {PAKISTANI_CITIES.map(city => (
                       <option key={city} value={city}>{city}</option>
                     ))}
-                    <option disabled>──────────</option>
-                    <option value="custom_mode">✍️ Manual Address / Custom Area</option>
-                    <option value="route_mode">🛣️ Between Two Locations (Route)</option>
-                    <option value="radius_mode">⭕ Define Area (Center & Radius)</option>
+                    <option value="custom">✍️ Manual Address / Custom Area</option>
                   </select>
-                )}
-
-                {/* 2. Manual/Custom Mode */}
-                {locationMode === 'custom' && (
+                ) : (
                   <div className="flex-1 flex gap-2">
                     <input 
                       type="text"
-                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-0"
-                      placeholder="Enter specific address or area..."
+                      className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none"
+                      placeholder="Enter specific address, street, or area..."
                       value={customLocation}
                       autoFocus
                       onChange={(e) => setCustomLocation(e.target.value)}
                     />
                     <button 
-                      onClick={() => setLocationMode('city')}
+                      onClick={() => setIsCustomLoc(false)}
                       className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"
                       title="Back to City List"
                     >
@@ -242,78 +210,10 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 )}
-
-                {/* 3. Route Mode (Between 2 locations) */}
-                {locationMode === 'route' && (
-                  <div className="flex-1 flex gap-2 min-w-0">
-                    <input 
-                      type="text"
-                      className="flex-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-[80px]"
-                      placeholder="Start (e.g. Saddar)"
-                      value={routeStart}
-                      autoFocus
-                      onChange={(e) => setRouteStart(e.target.value)}
-                    />
-                    <span className="self-center text-gray-400 font-medium text-sm hidden sm:block">to</span>
-                    <input 
-                      type="text"
-                      className="flex-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-[80px]"
-                      placeholder="End (e.g. Clifton)"
-                      value={routeEnd}
-                      onChange={(e) => setRouteEnd(e.target.value)}
-                    />
-                    <button 
-                      onClick={() => setLocationMode('city')}
-                      className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"
-                      title="Back to City List"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-
-                 {/* 4. Radius Mode (Center + Radius) */}
-                 {locationMode === 'radius' && (
-                  <div className="flex-1 flex gap-2 min-w-0">
-                    <input 
-                      type="text"
-                      className="flex-[2] p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none min-w-[100px]"
-                      placeholder="Center Point (e.g. Liberty Market)"
-                      value={radiusCenter}
-                      autoFocus
-                      onChange={(e) => setRadiusCenter(e.target.value)}
-                    />
-                    
-                    {/* Radius Input with custom typing support */}
-                    <div className="relative w-[110px] flex-shrink-0">
-                        <input
-                            type="number"
-                            min="1"
-                            max="1000"
-                            step="0.1"
-                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pakgreen-500 outline-none pr-8"
-                            placeholder="Radius"
-                            value={radiusValue}
-                            onChange={(e) => setRadiusValue(e.target.value)}
-                            title="Enter radius in Kilometers"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium pointer-events-none">km</span>
-                    </div>
-
-                    <button 
-                      onClick={() => setLocationMode('city')}
-                      className="px-3 text-gray-500 hover:text-red-500 bg-gray-50 rounded-lg border border-gray-200"
-                      title="Back to City List"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-
-                {/* GPS Button (Always visible) */}
+                
                 <button 
                   onClick={handleGeoLocation}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-lg border border-gray-300 transition shrink-0"
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 p-3 rounded-lg border border-gray-300 transition"
                   title="Use GPS Location"
                 >
                   📍
@@ -344,76 +244,67 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Filters, Map, and Controls Bar */}
+        {/* Filters and Controls Bar */}
         {results.length > 0 && (
-          <>
-            {/* Map Preview of the Search Area */}
-            <MapPreview 
-              query={query} 
-              location={getEffectiveLocation()} 
-              filter={areaFilter} 
-            />
+          <div className="mb-6 space-y-4">
+             {/* Toolbar */}
+             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                {/* Filter Input */}
+                <div className="w-full md:w-1/2 relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                  <input 
+                    type="text" 
+                    placeholder="Filter by Town or Area..." 
+                    value={areaFilter} 
+                    onChange={(e) => setAreaFilter(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-pakgreen-500 outline-none"
+                  />
+                </div>
 
-            <div className="mb-6 space-y-4">
-              {/* Toolbar */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                  {/* Filter Input */}
-                  <div className="w-full md:w-1/2 relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-                    <input 
-                      type="text" 
-                      placeholder="Filter by Town or Area (Map will update)..." 
-                      value={areaFilter} 
-                      onChange={(e) => setAreaFilter(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-pakgreen-500 outline-none"
-                    />
-                  </div>
+                {/* Selection and Export Actions */}
+                <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
+                   <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
+                        onChange={handleSelectAll}
+                        className="w-4 h-4 text-pakgreen-600 rounded border-gray-300 focus:ring-pakgreen-500"
+                      />
+                      Select All
+                   </label>
 
-                  {/* Selection and Export Actions */}
-                  <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700 font-medium cursor-pointer select-none">
-                        <input 
-                          type="checkbox" 
-                          checked={filteredResults.length > 0 && filteredResults.every(b => selectedIds.has(b.id))}
-                          onChange={handleSelectAll}
-                          className="w-4 h-4 text-pakgreen-600 rounded border-gray-300 focus:ring-pakgreen-500"
-                        />
-                        Select All
-                    </label>
+                   <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
 
-                    <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
+                   <div className="flex gap-2 w-full sm:w-auto justify-center">
+                      <button onClick={() => exportToVCF(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200 whitespace-nowrap" title="Export VCard">
+                        📇 VCF
+                      </button>
+                      <button onClick={() => exportToCSV(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200 whitespace-nowrap" title="Export CSV">
+                        📊 CSV
+                      </button>
+                      <button onClick={() => exportToWord(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200 whitespace-nowrap" title="Export Word">
+                        📝 Word
+                      </button>
+                   </div>
+                   
+                   <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-2">
+                      Clear
+                   </button>
+                </div>
+             </div>
 
-                    <div className="flex gap-2 w-full sm:w-auto justify-center">
-                        <button onClick={() => exportToVCF(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-blue-50 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-100 transition border border-blue-200 whitespace-nowrap" title="Export VCard">
-                          📇 VCF
-                        </button>
-                        <button onClick={() => exportToCSV(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-green-50 text-green-700 px-3 py-2 rounded-md hover:bg-green-100 transition border border-green-200 whitespace-nowrap" title="Export CSV">
-                          📊 CSV
-                        </button>
-                        <button onClick={() => exportToWord(getExportData())} className="flex-1 sm:flex-none flex items-center justify-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-100 transition border border-indigo-200 whitespace-nowrap" title="Export Word">
-                          📝 Word
-                        </button>
-                    </div>
-                    
-                    <button onClick={clearResults} className="text-sm text-gray-500 hover:text-red-500 px-2">
-                        Clear
-                    </button>
-                  </div>
-              </div>
-
-              {/* Stats & Selected Indicator */}
-              <div className="flex justify-between items-center px-2">
-                  <h2 className="text-xl font-bold text-gray-800">
-                    Results <span className="text-gray-400 font-normal">({filteredResults.length})</span>
-                  </h2>
-                  {selectedIds.size > 0 && (
-                    <span className="bg-pakgreen-100 text-pakgreen-800 text-xs font-bold px-3 py-1 rounded-full">
-                      {selectedIds.size} Selected for Export
-                    </span>
-                  )}
-              </div>
-            </div>
-          </>
+             {/* Stats & Selected Indicator */}
+             <div className="flex justify-between items-center px-2">
+                <h2 className="text-xl font-bold text-gray-800">
+                   Results <span className="text-gray-400 font-normal">({filteredResults.length})</span>
+                </h2>
+                {selectedIds.size > 0 && (
+                  <span className="bg-pakgreen-100 text-pakgreen-800 text-xs font-bold px-3 py-1 rounded-full">
+                    {selectedIds.size} Selected for Export
+                  </span>
+                )}
+             </div>
+          </div>
         )}
 
         {/* Results Grid */}

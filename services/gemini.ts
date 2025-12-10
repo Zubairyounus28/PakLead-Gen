@@ -70,27 +70,13 @@ export const searchBusinessesWithGemini = async (
     ? "Expand the search area to surrounding neighborhoods or a wider radius to find new results not listed above."
     : "";
 
-  // Dynamic Prompt Construction based on location type
-  let searchInstruction = `Search for "${term}" in "${location}" (Pakistan).`;
-  
-  const lowerLoc = location.toLowerCase();
-
-  // Detect "between X and Y" pattern for route searching
-  if (lowerLoc.startsWith("between ")) {
-    searchInstruction = `Search for "${term}" businesses located along the route or area ${location} (Pakistan). Focus on finding businesses situated geographically between the two points.`;
-  } 
-  // Detect "within X km of Y" pattern for radius/area coverage
-  else if (lowerLoc.startsWith("within ")) {
-    searchInstruction = `Perform a comprehensive area search. Search for "${term}" strictly ${location} (Pakistan). Scan the entire circular area to ensure coverage of all relevant sectors within this radius.`;
-  }
-
   const prompt = `
-    ${searchInstruction}
+    Search for "${term}" in "${location}" (Pakistan).
     ${locationContext}
     ${excludeContext}
     ${expansionInstruction}
     
-    Strictly list as many distinct local businesses as possible (target at least 30 to 50 results) found using Google Maps. Do not stop at 10.
+    Strictly list 5 to 10 distinct local businesses found using Google Maps.
     
     IMPORTANT: You must format the output strictly as follows for my parser to work. 
     Do not use JSON blocks. Use this plain text template for each business:
@@ -110,7 +96,7 @@ export const searchBusinessesWithGemini = async (
   try {
     const config: any = {
       tools: [{ googleMaps: {} }],
-      systemInstruction: "You are a high-volume lead generation assistant for Pakistan. Your goal is to extract the maximum number of business listings possible in a single response.",
+      systemInstruction: "You are a lead generation assistant for Pakistan. You extract business details accurately using Google Maps.",
     };
 
     // If using 'Near Me' with coordinates, pass them to retrievalConfig

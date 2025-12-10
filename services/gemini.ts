@@ -73,9 +73,15 @@ export const searchBusinessesWithGemini = async (
   // Dynamic Prompt Construction based on location type
   let searchInstruction = `Search for "${term}" in "${location}" (Pakistan).`;
   
+  const lowerLoc = location.toLowerCase();
+
   // Detect "between X and Y" pattern for route searching
-  if (location.toLowerCase().startsWith("between ")) {
+  if (lowerLoc.startsWith("between ")) {
     searchInstruction = `Search for "${term}" businesses located along the route or area ${location} (Pakistan). Focus on finding businesses situated geographically between the two points.`;
+  } 
+  // Detect "within X km of Y" pattern for radius/area coverage
+  else if (lowerLoc.startsWith("within ")) {
+    searchInstruction = `Perform a comprehensive area search. Search for "${term}" strictly ${location} (Pakistan). Scan the entire circular area to ensure coverage of all relevant sectors within this radius.`;
   }
 
   const prompt = `

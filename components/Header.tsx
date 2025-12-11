@@ -36,7 +36,7 @@ const Header: React.FC<Props> = ({ onDonateClick }) => {
             
             <button 
                 onClick={onDonateClick}
-                className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 text-xs md:text-sm font-bold px-4 py-2 rounded-full shadow-md transition-transform transform hover:scale-105 active:scale-95 flex items-center gap-1 ring-2 ring-yellow-400 ring-offset-2 ring-offset-pakgreen-700"
+                className="animate-blink-alert hover:animate-none bg-yellow-400 hover:bg-yellow-500 text-yellow-900 text-xs md:text-sm font-bold px-4 py-2 rounded-full shadow-md transition-transform transform hover:scale-105 active:scale-95 flex items-center gap-1 ring-2 ring-yellow-400 ring-offset-2 ring-offset-pakgreen-700"
             >
                 <span>🎁</span> Donate Now
             </button>

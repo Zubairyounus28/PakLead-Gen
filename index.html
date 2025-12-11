@@ -30,6 +30,25 @@
                 800: '#166534',
                 900: '#14532d',
               }
+            },
+            animation: {
+              'blink-alert': 'blink-yellow-red 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fadeIn': 'fadeIn 0.3s ease-out',
+              'bounce-short': 'bounce-short 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            },
+            keyframes: {
+              'blink-yellow-red': {
+                '0%, 100%': { backgroundColor: '#facc15', color: '#713f12', borderColor: '#facc15' }, // yellow-400, yellow-900
+                '50%': { backgroundColor: '#ef4444', color: '#ffffff', borderColor: '#ef4444' },       // red-500, white
+              },
+              'fadeIn': {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              },
+              'bounce-short': {
+                '0%': { transform: 'scale(0.95)', opacity: '0' },
+                '100%': { transform: 'scale(1)', opacity: '1' },
+              }
             }
           }
         }

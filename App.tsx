@@ -477,6 +477,13 @@ const App: React.FC = () => {
              </div>
           </div>
       </div>
+      
+      {/* Footer */}
+      <footer className="bg-pakgreen-900 text-white/90 py-2.5 text-center text-xs shrink-0 z-50 shadow-inner">
+        <p>
+          Contact for Website or App Development: <a href="tel:+923212696712" className="font-bold text-yellow-400 hover:text-yellow-300 hover:underline mx-1">+92 321 2696712</a> <span className="opacity-50 mx-1">|</span> Zubair Younus
+        </p>
+      </footer>
 
       <DonateModal isOpen={isDonateOpen} onClose={() => setIsDonateOpen(false)} />
     </div>
